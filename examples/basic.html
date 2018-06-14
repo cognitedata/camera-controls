@@ -65,6 +65,12 @@ const mesh = new THREE.Mesh(
 );
 scene.add( mesh );
 
+const targetMesh = new THREE.Mesh(
+	new THREE.SphereGeometry(0.05),
+	new THREE.MeshBasicMaterial( { color: 0x00ff00, wireframe: false } )
+);
+scene.add(targetMesh);
+
 const gridHelper = new THREE.GridHelper( 50, 50 );
 gridHelper.position.y = - 1;
 scene.add( gridHelper );
@@ -75,18 +81,19 @@ renderer.render( scene, camera );
 
 	const delta = clock.getDelta();
 	const elapsed = clock.getElapsedTime();
-	const needsUpdate = cameraControls.update( delta );
+	// const needsUpdate = cameraControls.update( delta );
 
 	// if ( elapsed > 30 ) { return; }
 
 	requestAnimationFrame( anim );
 
-	if ( needsUpdate ) {
+	// if ( needsUpdate ) {
 
+		targetMesh.position.copy(cameraControls.target);
 		renderer.render( scene, camera );
-		console.log( 'rendered' );
+		// console.log( 'rendered' );
 
-	}
+	// }
 
 } )();
 </script>

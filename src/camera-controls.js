@@ -10,7 +10,9 @@ const STATE = {
 	PAN         :   2,
 	TOUCH_ROTATE:   3,
 	TOUCH_DOLLY :   4,
-	TOUCH_PAN   :   5
+	TOUCH_PAN   :   5,
+	ROTATE_FP   :   6, // rotate first person mode
+	FP_NAVIGATE :   7  // first person navigate mode (WASD)
 };
 
 export default class CameraControls {
@@ -39,6 +41,8 @@ export default class CameraControls {
 		this.draggingDampingFactor = 0.25;
 		this.zoomSpeed = 1.0;
 		this.panSpeed = 2.0;
+		this.rotationSpeed = 0.005;
+		this.enableKeyboardNavigation = true;
 
 		this.domElement = domElement;
 
@@ -75,6 +79,7 @@ export default class CameraControls {
 			this.domElement.addEventListener( 'touchstart', onTouchStart );
 			this.domElement.addEventListener( 'wheel', onMouseWheel );
 			this.domElement.addEventListener( 'contextmenu', onContextMenu );
+			document.addEventListener( 'keydown', onKeyDown, true );
 
 			this.dispose = () => {
 
@@ -82,6 +87,7 @@ export default class CameraControls {
 				scope.domElement.removeEventListener( 'touchstart', onTouchStart );
 				scope.domElement.removeEventListener( 'wheel', onMouseWheel );
 				scope.domElement.removeEventListener( 'contextmenu', onContextMenu );
+				document.removeEventListener( 'keydown', onKeyDown );
 				document.removeEventListener( 'mousemove', dragging );
 				document.removeEventListener( 'touchmove', dragging );
 				document.removeEventListener( 'mouseup', endDragging );
@@ -101,7 +107,7 @@ export default class CameraControls {
 
 					case THREE.MOUSE.LEFT:
 
-						state = STATE.ROTATE;
+						state = event.shiftKey ? STATE.ROTATE_FP : STATE.ROTATE;
 						break;
 
 					case THREE.MOUSE.MIDDLE:
@@ -166,16 +172,75 @@ export default class CameraControls {
 
 				event.preventDefault();
 
-				if ( event.deltaY < 0 ) {
-
-					dollyIn();
-
-				} else if ( event.deltaY > 0 ) {
-
-					dollyOut();
-
+				const num = Math.min(7, Math.abs(event.deltaY));
+				for (let i = 0; i < num; i++) {
+					if ( event.deltaY < 0 ) {
+						dollyIn();
+					} else {
+						dollyOut();
+					}
 				}
 
+			}
+
+			function onKeyDown( event ) {
+				
+				if ( ! scope.enabled || ! scope.enableKeyboardNavigation ) return;
+
+				event.preventDefault();
+
+				function keyboardPan(deltaX, deltaY) {
+					const panSpeed = 20;
+					const elementRect = scope.domElement.getBoundingClientRect();
+					const offset = _v3.copy( scope.object.position ).sub( scope.target );
+					// half of the fov is center to top of screen
+					const targetDistance = offset.length() * Math.tan( ( scope.object.fov / 2 ) * Math.PI / 180 );
+					const panX = ( scope.panSpeed * deltaX * panSpeed * targetDistance / elementRect.height );
+					const panY = ( scope.panSpeed * deltaY * panSpeed * targetDistance / elementRect.height );
+					scope.pan( panX, panY, true );
+				}
+
+				const fastMoving = event.shiftKey;
+				const numDolly = fastMoving ? 25 : 5;
+
+				switch (event.keyCode) {
+					case 38: // UP
+					case 87: // W
+						state = STATE.FP_NAVIGATE;
+						for (let i = 0; i < numDolly; i++) {
+							dollyIn();
+						}
+						document.addEventListener('keyup', onKeyUp);
+						break;
+					
+					case 40: // DOWN
+					case 83: // S
+						state = STATE.FP_NAVIGATE;
+						for (let i = 0; i < numDolly; i++) {
+							dollyOut();
+						}
+						document.addEventListener('keyup', onKeyUp);
+						break;
+
+					case 37: // LEFT
+					case 65: // A
+						state = STATE.FP_NAVIGATE;
+						document.addEventListener('keyup', onKeyUp);
+						keyboardPan(fastMoving ? -5 : -1, 0);
+						break;
+
+					case 39: // RIGHT
+					case 68: // D
+						state = STATE.FP_NAVIGATE;
+						document.addEventListener('keyup', onKeyUp);
+						keyboardPan(fastMoving ? 5 : 1, 0);
+						break;
+				}
+			}
+
+			function onKeyUp( event ) {
+				state = STATE.NONE;
+				document.removeEventListener('keyup', onKeyUp);
 			}
 
 			function onContextMenu( event ) {
@@ -285,6 +350,9 @@ export default class CameraControls {
 						scope.pan( panX, panY, true );
 						break;
 
+					case STATE.ROTATE_FP:
+					  scope.rotatetFP(deltaX, deltaY);
+						break;
 				}
 
 			}
@@ -305,16 +373,14 @@ export default class CameraControls {
 
 			function dollyIn() {
 
-				const zoomScale = Math.pow( 0.95, scope.zoomSpeed );
+				const zoomScale = Math.pow( 0.98, scope.zoomSpeed );
 				scope.dolly( scope._sphericalEnd.radius * zoomScale - scope._sphericalEnd.radius );
-
 			}
 
 			function dollyOut() {
 
-				const zoomScale = Math.pow( 0.95, scope.zoomSpeed );
+				const zoomScale = Math.pow( 0.98, scope.zoomSpeed );
 				scope.dolly( scope._sphericalEnd.radius / zoomScale - scope._sphericalEnd.radius );
-
 			}
 
 
@@ -353,7 +419,30 @@ export default class CameraControls {
 		}
 
 		this._needsUpdate = true;
+		this.update();
 
+	}
+
+	rotatetFP( deltaX, deltaY ) {
+		const camera = this.object;
+		camera.rotateY(deltaX * this.rotationSpeed);
+		camera.rotateX(deltaY * this.rotationSpeed);
+
+		const _lookAtTarget = camera.clone();
+
+		_lookAtTarget.position.copy(camera.position);
+		_lookAtTarget.rotation.copy(camera.rotation);
+		_lookAtTarget.translateZ(-1);
+		camera.lookAt(_lookAtTarget.position);
+		
+		const cameraDirection = camera.getWorldDirection();
+		const targetOffset = new THREE.Vector3().subVectors(this.target, camera.position);
+		const distToTarget = targetOffset.length();
+		this.target.addVectors(camera.position, cameraDirection.multiplyScalar(distToTarget));
+		this._targetEnd.copy(this.target);
+
+		this._spherical.setFromVector3( new THREE.Vector3().subVectors(camera.position, this.target));
+		this._sphericalEnd.copy(this._spherical);
 	}
 
 	dolly( distance, enableTransition ) {
@@ -377,6 +466,7 @@ export default class CameraControls {
 		}
 
 		this._needsUpdate = true;
+		this.update();
 
 	}
 
@@ -399,6 +489,7 @@ export default class CameraControls {
 		}
 
 		this._needsUpdate = true;
+		this.update();
 
 	}
 
@@ -443,7 +534,8 @@ export default class CameraControls {
 
 	update( delta ) {
 
-		const dampingFactor = this.dampingFactor * delta / 0.016;
+		// const dampingFactor = this.dampingFactor * delta / 0.016;
+		const dampingFactor = 1;
 		const deltaTheta  = this._sphericalEnd.theta  - this._spherical.theta;
 		const deltaPhi    = this._sphericalEnd.phi    - this._spherical.phi;
 		const deltaRadius = this._sphericalEnd.radius - this._spherical.radius;
@@ -478,6 +570,15 @@ export default class CameraControls {
 		this._spherical.makeSafe();
 		this.object.position.setFromSpherical( this._spherical ).add( this.target );
 		this.object.lookAt( this.target );
+
+		const minTargetLength = 1;
+		const offset = new THREE.Vector3().subVectors(this.target, this.object.position);
+		if (offset.length() < minTargetLength) {
+			this.target.copy( this.object.getWorldDirection().multiplyScalar(minTargetLength).add(this.object.position) );
+			this._targetEnd.copy(this.target);
+			this._spherical.setFromVector3( new THREE.Vector3().subVectors(this.object.position, this.target));
+			this._sphericalEnd.copy(this._spherical);
+		}
 
 		const needsUpdate = this._needsUpdate;
 		this._needsUpdate = false;
