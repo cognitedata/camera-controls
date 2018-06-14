@@ -43,6 +43,8 @@ export default class CameraControls {
 		this.panSpeed = 2.0;
 		this.rotationSpeed = 0.005;
 		this.enableKeyboardNavigation = true;
+		this.enableMinDistToTarget = true;
+		this.minDistToTarget = 1;
 
 		this.domElement = domElement;
 
@@ -571,13 +573,14 @@ export default class CameraControls {
 		this.object.position.setFromSpherical( this._spherical ).add( this.target );
 		this.object.lookAt( this.target );
 
-		const minTargetLength = 1;
-		const offset = new THREE.Vector3().subVectors(this.target, this.object.position);
-		if (offset.length() < minTargetLength) {
-			this.target.copy( this.object.getWorldDirection().multiplyScalar(minTargetLength).add(this.object.position) );
-			this._targetEnd.copy(this.target);
-			this._spherical.setFromVector3( new THREE.Vector3().subVectors(this.object.position, this.target));
-			this._sphericalEnd.copy(this._spherical);
+		if (this.enableMinDistToTarget) {
+			const offset = new THREE.Vector3().subVectors(this.target, this.object.position);
+			if (offset.length() < this.minDistToTarget) {
+				this.target.copy( this.object.getWorldDirection().multiplyScalar(minTargetLength).add(this.object.position) );
+				this._targetEnd.copy(this.target);
+				this._spherical.setFromVector3( new THREE.Vector3().subVectors(this.object.position, this.target));
+				this._sphericalEnd.copy(this._spherical);
+			}
 		}
 
 		const needsUpdate = this._needsUpdate;
