@@ -174,12 +174,15 @@ export default class CameraControls {
 
 				event.preventDefault();
 
+				const x = ( event.clientX / scope.domElement.clientWidth ) * 2 - 1;
+				const y = - ( event.clientY / scope.domElement.clientHeight ) * 2 + 1;
+
 				const num = Math.min(7, Math.abs(event.deltaY));
 				for (let i = 0; i < num; i++) {
 					if ( event.deltaY < 0 ) {
-						dollyIn();
+						dollyIn( x, y );
 					} else {
-						dollyOut();
+						dollyOut( x, y );
 					}
 				}
 
@@ -373,16 +376,17 @@ export default class CameraControls {
 
 			}
 
-			function dollyIn() {
+			// x, y is coordinate to zoom to. It is in GL coordinates (-1, +1)
+			function dollyIn(x = 0, y = 0) {
 
 				const zoomScale = Math.pow( 0.98, scope.zoomSpeed );
-				scope.dolly( scope._sphericalEnd.radius * zoomScale - scope._sphericalEnd.radius );
+				scope.dolly( scope._sphericalEnd.radius * zoomScale - scope._sphericalEnd.radius, false, x, y );
 			}
 
-			function dollyOut() {
+			function dollyOut( x = 0, y = 0 ) {
 
 				const zoomScale = Math.pow( 0.98, scope.zoomSpeed );
-				scope.dolly( scope._sphericalEnd.radius / zoomScale - scope._sphericalEnd.radius );
+				scope.dolly( scope._sphericalEnd.radius / zoomScale - scope._sphericalEnd.radius, false, x, y );
 			}
 
 
@@ -447,19 +451,37 @@ export default class CameraControls {
 		this._sphericalEnd.copy(this._spherical);
 	}
 
-	dolly( distance, enableTransition ) {
+	dolly( distance, enableTransition, x, y ) {
 
-		this.dollyTo( this._sphericalEnd.radius + distance, enableTransition );
+		this.dollyTo( this._sphericalEnd.radius + distance, enableTransition, x, y );
 
 	}
 
-	dollyTo( distance, enableTransition ) {
+	dollyTo( distance, enableTransition, x, y ) {
 
-		this._sphericalEnd.radius = THREE.Math.clamp(
+		let newDistanceToTarget = THREE.Math.clamp(
 			distance,
 			this.minDistance,
 			this.maxDistance
 		);
+		const cameraMoveDistance = this._sphericalEnd.radius - newDistanceToTarget;
+
+		const mouse = new THREE.Vector2( x, y );
+		const raycaster = new THREE.Raycaster();
+		raycaster.setFromCamera( mouse, this.object );
+
+		const cameraOffset = raycaster.ray.direction.clone().multiplyScalar( cameraMoveDistance );
+		const newCameraPosition = this.object.position.clone().add( cameraOffset );
+
+		// we want the target to be "static" when we zoom out
+		const isZoomingOut = cameraMoveDistance < 0;
+		if (isZoomingOut) {
+			newDistanceToTarget = newCameraPosition.distanceTo( this.target );
+		}
+		const newTargetOffset = this.object.clone().getWorldDirection().multiplyScalar( newDistanceToTarget );
+		this._targetEnd.copy( newCameraPosition.clone().add( newTargetOffset ) );
+
+		this._sphericalEnd.setFromVector3( newCameraPosition.clone().sub( this._targetEnd ) );
 
 		if ( ! enableTransition ) {
 
@@ -576,7 +598,7 @@ export default class CameraControls {
 		if (this.enableMinDistToTarget) {
 			const offset = new THREE.Vector3().subVectors(this.target, this.object.position);
 			if (offset.length() < this.minDistToTarget) {
-				this.target.copy( this.object.getWorldDirection().multiplyScalar(minTargetLength).add(this.object.position) );
+				this.target.copy( this.object.getWorldDirection().multiplyScalar(this.minDistToTarget).add(this.object.position) );
 				this._targetEnd.copy(this.target);
 				this._spherical.setFromVector3( new THREE.Vector3().subVectors(this.object.position, this.target));
 				this._sphericalEnd.copy(this._spherical);
