@@ -81,7 +81,7 @@ renderer.render( scene, camera );
 
 	const delta = clock.getDelta();
 	const elapsed = clock.getElapsedTime();
-	// const needsUpdate = cameraControls.update( delta );
+	const needsUpdate = cameraControls.update( delta );
 
 	// if ( elapsed > 30 ) { return; }
 
@@ -91,7 +91,6 @@ renderer.render( scene, camera );
 
 		targetMesh.position.copy(cameraControls.target);
 		renderer.render( scene, camera );
-		// console.log( 'rendered' );
 
 	// }
 

@@ -15,6 +15,12 @@ const STATE = {
 	FP_NAVIGATE :   7  // first person navigate mode (WASD)
 };
 
+function checkIsFirefox() {
+	const _ua = navigator.userAgent.toLowerCase();
+	return (_ua.indexOf("firefox") !== -1);
+}
+const isFirefox = checkIsFirefox();
+
 export default class CameraControls {
 
 	static install( libs ) {
@@ -38,13 +44,14 @@ export default class CameraControls {
 		this.minAzimuthAngle = - Infinity; // radians
 		this.maxAzimuthAngle = Infinity; // radians
 		this.dampingFactor = 0.05;
-		this.draggingDampingFactor = 0.25;
+		this.draggingDampingFactor = 0.5;
 		this.zoomSpeed = 1.0;
-		this.panSpeed = 2.0;
+		this.panSpeed = 1.0;
+		this.minPanSpeed = 1.0;
 		this.rotationSpeed = 0.005;
 		this.enableKeyboardNavigation = true;
 		this.enableMinDistToTarget = true;
-		this.minDistToTarget = 1;
+		this.minDistToTarget = 3;
 
 		this.domElement = domElement;
 
@@ -56,6 +63,9 @@ export default class CameraControls {
 		this._spherical = new THREE.Spherical();
 		this._spherical.setFromVector3( this.object.position );
 		this._sphericalEnd = new THREE.Spherical().copy( this._spherical );
+
+		// state
+		this.state = STATE.NONE;
 
 		// reset
 		this._target0 = this.target.clone();
@@ -73,13 +83,13 @@ export default class CameraControls {
 			const scope = this;
 			const dragStart  = new THREE.Vector2();
 			const dollyStart = new THREE.Vector2();
-			let state = STATE.NONE;
 			let elementRect;
 			let savedDampingFactor;
 
 			this.domElement.addEventListener( 'mousedown', onMouseDown );
 			this.domElement.addEventListener( 'touchstart', onTouchStart );
 			this.domElement.addEventListener( 'wheel', onMouseWheel );
+			this.domElement.addEventListener( 'DOMMouseScroll', onMouseWheel );
 			this.domElement.addEventListener( 'contextmenu', onContextMenu );
 			document.addEventListener( 'keydown', onKeyDown, true );
 
@@ -88,6 +98,7 @@ export default class CameraControls {
 				scope.domElement.removeEventListener( 'mousedown', onMouseDown );
 				scope.domElement.removeEventListener( 'touchstart', onTouchStart );
 				scope.domElement.removeEventListener( 'wheel', onMouseWheel );
+				scope.domElement.removeEventListener( 'DOMMouseScroll', onMouseWheel );
 				scope.domElement.removeEventListener( 'contextmenu', onContextMenu );
 				document.removeEventListener( 'keydown', onKeyDown );
 				document.removeEventListener( 'mousemove', dragging );
@@ -103,23 +114,23 @@ export default class CameraControls {
 
 				event.preventDefault();
 
-				const prevState = state;
+				const prevState = scope.state;
 
 				switch ( event.button ) {
 
 					case THREE.MOUSE.LEFT:
 
-						state = event.shiftKey ? STATE.ROTATE_FP : STATE.ROTATE;
+						scope.state = event.shiftKey || event.ctrlKey ? STATE.ROTATE_FP : STATE.ROTATE;
 						break;
 
 					case THREE.MOUSE.MIDDLE:
 
-						state = STATE.DOLLY;
+					scope.state = STATE.DOLLY;
 						break;
 
 					case THREE.MOUSE.RIGHT:
 
-						state = STATE.PAN;
+					scope.state = STATE.PAN;
 						break;
 
 				}
@@ -138,23 +149,23 @@ export default class CameraControls {
 
 				event.preventDefault();
 
-				const prevState = state;
+				const prevState = scope.state;
 
 				switch ( event.touches.length ) {
 
 					case 1:	// one-fingered touch: rotate
 
-						state = STATE.TOUCH_ROTATE;
+						scope.state = STATE.TOUCH_ROTATE;
 						break;
 
 					case 2:	// two-fingered touch: dolly
 
-						state = STATE.TOUCH_DOLLY;
+						scope.state = STATE.TOUCH_DOLLY;
 						break;
 
 					case 3: // three-fingered touch: pan
 
-						state = STATE.TOUCH_PAN;
+						scope.state = STATE.TOUCH_PAN;
 						break;
 
 				}
@@ -177,13 +188,20 @@ export default class CameraControls {
 				const x = ( event.clientX / scope.domElement.clientWidth ) * 2 - 1;
 				const y = - ( event.clientY / scope.domElement.clientHeight ) * 2 + 1;
 
-				const num = Math.min(7, Math.abs(event.deltaY));
-				for (let i = 0; i < num; i++) {
-					if ( event.deltaY < 0 ) {
-						dollyIn( x, y );
-					} else {
-						dollyOut( x, y );
-					}
+				let delta = 0;
+				if ( event.wheelDelta ) { // WebKit / Opera / Explorer 9
+					delta = - event.wheelDelta / 40;
+				} else if ( event.detail ) { // Firefox
+						delta = event.detail;
+				} else if (event.deltaY) { // Firefox / Explorer + event target is SVG.
+						const factor = isFirefox ? 1 : 40;
+						delta = event.deltaY / factor;
+				}
+
+				if (delta < 0) {
+					dollyIn( x, y, Math.abs( delta ) );
+				} else {
+					dollyOut( x, y, Math.abs( delta ) );
 				}
 
 			}
@@ -211,7 +229,7 @@ export default class CameraControls {
 				switch (event.keyCode) {
 					case 38: // UP
 					case 87: // W
-						state = STATE.FP_NAVIGATE;
+						scope.state = STATE.FP_NAVIGATE;
 						for (let i = 0; i < numDolly; i++) {
 							dollyIn();
 						}
@@ -220,7 +238,7 @@ export default class CameraControls {
 					
 					case 40: // DOWN
 					case 83: // S
-						state = STATE.FP_NAVIGATE;
+						scope.state = STATE.FP_NAVIGATE;
 						for (let i = 0; i < numDolly; i++) {
 							dollyOut();
 						}
@@ -229,14 +247,14 @@ export default class CameraControls {
 
 					case 37: // LEFT
 					case 65: // A
-						state = STATE.FP_NAVIGATE;
+						scope.state = STATE.FP_NAVIGATE;
 						document.addEventListener('keyup', onKeyUp);
 						keyboardPan(fastMoving ? -5 : -1, 0);
 						break;
 
 					case 39: // RIGHT
 					case 68: // D
-						state = STATE.FP_NAVIGATE;
+						scope.state = STATE.FP_NAVIGATE;
 						document.addEventListener('keyup', onKeyUp);
 						keyboardPan(fastMoving ? 5 : 1, 0);
 						break;
@@ -244,7 +262,7 @@ export default class CameraControls {
 			}
 
 			function onKeyUp( event ) {
-				state = STATE.NONE;
+				scope.state = STATE.NONE;
 				document.removeEventListener('keyup', onKeyUp);
 			}
 
@@ -275,7 +293,7 @@ export default class CameraControls {
 
 				// }
 
-				if ( state === STATE.TOUCH_DOLLY ) {
+				if ( scope.state === STATE.TOUCH_DOLLY ) {
 
 					const dx = x - event.touches[ 1 ].pageX;
 					const dy = y - event.touches[ 1 ].pageY;
@@ -310,7 +328,7 @@ export default class CameraControls {
 
 				dragStart.set( x, y );
 
-				switch ( state ) {
+				switch ( scope.state ) {
 
 					case STATE.ROTATE:
 					case STATE.TOUCH_ROTATE:
@@ -325,19 +343,26 @@ export default class CameraControls {
 						break;
 
 					case STATE.TOUCH_DOLLY:
-
 						const dx = x - event.touches[ 1 ].pageX;
 						const dy = y - event.touches[ 1 ].pageY;
 						const distance = Math.sqrt( dx * dx + dy * dy );
 						const dollyDelta = dollyStart.y - distance;
 
+						const centerX = (x + event.touches[ 1 ].pageX) / 2;
+						const centerY = (y + event.touches[ 1 ].pageY) / 2;
+						const glX = ( centerX / scope.domElement.clientWidth ) * 2 - 1;
+						const glY = - ( centerY / scope.domElement.clientHeight ) * 2 + 1;
+
+						console.log('x: ', x);
+						console.log('event.touches[ 1 ].pageX: ', event.touches[ 1 ].pageX);
+
 						if ( dollyDelta > 0 ) {
 
-							dollyOut();
+							dollyOut(glX, glY);
 
 						} else if ( dollyDelta < 0 ) {
 
-							dollyIn();
+							dollyIn(glX, glY);
 
 						}
 
@@ -350,9 +375,13 @@ export default class CameraControls {
 						const offset = _v3.copy( scope.object.position ).sub( scope.target );
 						// half of the fov is center to top of screen
 						const targetDistance = offset.length() * Math.tan( ( scope.object.fov / 2 ) * Math.PI / 180 );
-						const panX = ( scope.panSpeed * deltaX * targetDistance / elementRect.height );
-						const panY = ( scope.panSpeed * deltaY * targetDistance / elementRect.height );
+
+						let panX = ( scope.panSpeed * deltaX * targetDistance / elementRect.height );
+						let panY = ( scope.panSpeed * deltaY * targetDistance / elementRect.height );
+						panX = THREE.Math.clamp(panX, -scope.minPanSpeed, scope.minPanSpeed);
+						panY = THREE.Math.clamp(panY, -scope.minPanSpeed, scope.minPanSpeed);
 						scope.pan( panX, panY, true );
+						// scope.pan( deltaX * scope.panSpeed, deltaY * scope.panSpeed, false );
 						break;
 
 					case STATE.ROTATE_FP:
@@ -367,7 +396,7 @@ export default class CameraControls {
 				if ( ! scope.enabled ) return;
 
 				scope.dampingFactor = savedDampingFactor;
-				state = STATE.NONE;
+				scope.state = STATE.NONE;
 
 				document.removeEventListener( 'mousemove', dragging );
 				document.removeEventListener( 'touchmove', dragging );
@@ -377,16 +406,24 @@ export default class CameraControls {
 			}
 
 			// x, y is coordinate to zoom to. It is in GL coordinates (-1, +1)
-			function dollyIn(x = 0, y = 0) {
+			function dollyIn( x = 0, y = 0, distanceUnits = 1 ) {
 
-				const zoomScale = Math.pow( 0.98, scope.zoomSpeed );
-				scope.dolly( scope._sphericalEnd.radius * zoomScale - scope._sphericalEnd.radius, false, x, y );
+				// const zoomScale = Math.pow( 0.97, scope.zoomSpeed );
+				// let distance = scope._sphericalEnd.radius * zoomScale - scope._sphericalEnd.radius;
+				// console.log('distanceIn: ', distance);
+				// distance = Math.min(-0.08, distance);
+				// const distance = scope.zoomSpeed * distanceUnits;
+				scope.dolly( scope.getZoomDistance(true, true, distanceUnits), true, x, y );
 			}
 
-			function dollyOut( x = 0, y = 0 ) {
+			function dollyOut( x = 0, y = 0, distanceUnits = 1 ) {
 
-				const zoomScale = Math.pow( 0.98, scope.zoomSpeed );
-				scope.dolly( scope._sphericalEnd.radius / zoomScale - scope._sphericalEnd.radius, false, x, y );
+				// const zoomScale = Math.pow( 0.97, scope.zoomSpeed );
+				// let distance = scope._sphericalEnd.radius / zoomScale - scope._sphericalEnd.radius;
+				// console.log('distanceOut: ', distance);
+				// distance = Math.max(0.08, distance);
+				// const distance = scope.zoomSpeed * distanceUnits;
+				scope.dolly( scope.getZoomDistance(false, true, distanceUnits), true, x, y );
 			}
 
 
@@ -413,9 +450,12 @@ export default class CameraControls {
 		const theta = Math.max( this.minAzimuthAngle, Math.min( this.maxAzimuthAngle, rotX ) );
 		const phi   = Math.max( this.minPolarAngle,   Math.min( this.maxPolarAngle,   rotY ) );
 
-		this._sphericalEnd.theta = theta;
-		this._sphericalEnd.phi   = phi;
+		this._sphericalEnd.theta  = theta;
+		this._sphericalEnd.phi    = phi;
+		this._sphericalEnd.radius = this._spherical.radius;
 		this._sphericalEnd.makeSafe();
+
+		this._targetEnd.copy(this.target);
 
 		if ( ! enableTransition ) {
 
@@ -425,7 +465,7 @@ export default class CameraControls {
 		}
 
 		this._needsUpdate = true;
-		this.update();
+		// this.update();
 
 	}
 
@@ -449,49 +489,67 @@ export default class CameraControls {
 
 		this._spherical.setFromVector3( new THREE.Vector3().subVectors(camera.position, this.target));
 		this._sphericalEnd.copy(this._spherical);
+
+		this.update();
+	}
+
+	getZoomDistance(zoomIn, enableTransition = true, distanceUnits) {
+		const zoomScale = Math.pow(0.97, this.zoomSpeed * distanceUnits);
+		const minDistance = this.minDistToTarget / zoomScale - this.minDistToTarget;
+		const camera = this.object;
+		const radius = camera.position.distanceTo(this.target);
+		let distance;
+		if (zoomIn) {
+			distance = radius * zoomScale - radius;
+			distance = Math.min(-minDistance, distance);
+		} else {
+			distance = radius / zoomScale - radius;
+			distance = Math.max(minDistance, distance);
+		}
+		return enableTransition ? distance * 1 / this.dampingFactor : distance;
 	}
 
 	dolly( distance, enableTransition, x, y ) {
-
-		this.dollyTo( this._sphericalEnd.radius + distance, enableTransition, x, y );
-
+		const radius = this.object.position.distanceTo(this.target);
+		this.dollyTo( radius + distance, enableTransition, x, y );
 	}
 
 	dollyTo( distance, enableTransition, x, y ) {
-
 		let newDistanceToTarget = THREE.Math.clamp(
 			distance,
 			this.minDistance,
 			this.maxDistance
 		);
-		const cameraMoveDistance = this._sphericalEnd.radius - newDistanceToTarget;
+		const camera = this.object;
+		const radius = camera.position.distanceTo(this.target);
+		const cameraMoveDistance = radius - newDistanceToTarget;
 
 		const mouse = new THREE.Vector2( x, y );
 		const raycaster = new THREE.Raycaster();
-		raycaster.setFromCamera( mouse, this.object );
+		raycaster.setFromCamera( mouse, camera );
 
 		const cameraOffset = raycaster.ray.direction.clone().multiplyScalar( cameraMoveDistance );
-		const newCameraPosition = this.object.position.clone().add( cameraOffset );
+		const newCameraPosition = camera.position.clone().add( cameraOffset );
 
-		// we want the target to be "static" when we zoom out
-		const isZoomingOut = cameraMoveDistance < 0;
-		if (isZoomingOut) {
-			newDistanceToTarget = newCameraPosition.distanceTo( this.target );
-		}
-		const newTargetOffset = this.object.clone().getWorldDirection().multiplyScalar( newDistanceToTarget );
-		this._targetEnd.copy( newCameraPosition.clone().add( newTargetOffset ) );
+		const cameraNormal = camera.getWorldDirection();
+		const targetPointPlane = new THREE.Plane();
+		targetPointPlane.setFromNormalAndCoplanarPoint(cameraNormal, this.target);
+		const projectLine = new THREE.Line3();
+		const lineLength = -targetPointPlane.distanceToPoint(newCameraPosition);
+		projectLine.set(newCameraPosition, newCameraPosition.clone().add(cameraNormal.clone().multiplyScalar( lineLength * 2 )));
+		const intersect = targetPointPlane.intersectLine( projectLine );
+		this._targetEnd.copy(intersect);
 
-		this._sphericalEnd.setFromVector3( newCameraPosition.clone().sub( this._targetEnd ) );
+		this._sphericalEnd.copy(this._spherical);
+		this._sphericalEnd.radius = newDistanceToTarget;
 
 		if ( ! enableTransition ) {
-
 			this._spherical.radius = this._sphericalEnd.radius;
-
+			this.update();
 		}
 
 		this._needsUpdate = true;
-		this.update();
-
+		// this.update();
 	}
 
 	pan( x, y, enableTransition ) {
@@ -513,7 +571,7 @@ export default class CameraControls {
 		}
 
 		this._needsUpdate = true;
-		this.update();
+		// this.update();
 
 	}
 
@@ -532,10 +590,12 @@ export default class CameraControls {
 	}
 
 	saveState() {
-
 		this._target0.copy( this.target );
 		this._position0.copy( this.object.position );
+	}
 
+	getState() {
+		return this.state;
 	}
 
 	reset( enableTransition ) {
@@ -552,14 +612,23 @@ export default class CameraControls {
 
 		}
 
+		// this.update();
+
 		this._needsUpdate = true;
 
 	}
 
-	update( delta ) {
+	setCameraPosition(position, target) {
+		this._target0.copy(target);
+		this._position0.copy(position.clone().sub(target));
+		this.reset();
+	}
 
-		// const dampingFactor = this.dampingFactor * delta / 0.016;
-		const dampingFactor = 1;
+	update( delta ) {
+		let dampingFactor = 1;
+		if (delta != null) {
+			dampingFactor = this.dampingFactor * delta / 0.016;
+		}
 		const deltaTheta  = this._sphericalEnd.theta  - this._spherical.theta;
 		const deltaPhi    = this._sphericalEnd.phi    - this._spherical.phi;
 		const deltaRadius = this._sphericalEnd.radius - this._spherical.radius;
@@ -573,7 +642,6 @@ export default class CameraControls {
 			Math.abs( deltaTarget.y ) > EPSILON ||
 			Math.abs( deltaTarget.z ) > EPSILON
 		) {
-
 			this._spherical.set(
 				this._spherical.radius + deltaRadius * dampingFactor,
 				this._spherical.phi    + deltaPhi    * dampingFactor,
