@@ -46,6 +46,7 @@ export default class CameraControls {
 		this.dampingFactor = 0.05;
 		this.draggingDampingFactor = 0.5;
 		this.zoomSpeed = 1.0;
+		this.maxZoomDistance = null;
 		this.panSpeed = 1.0;
 		this.minPanSpeed = 1.0;
 		this.rotationSpeed = 0.005;
@@ -505,6 +506,9 @@ export default class CameraControls {
 		} else {
 			distance = radius / zoomScale - radius;
 			distance = Math.max(minDistance, distance);
+		}
+		if (this.maxZoomDistance !== null) {
+			distance = THREE.Math.clamp(distance, -this.maxZoomDistance, this.maxZoomDistance);
 		}
 		return enableTransition ? distance * 1 / this.dampingFactor : distance;
 	}
