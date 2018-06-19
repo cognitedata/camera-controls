@@ -1,14 +1,20 @@
 {
-	"presets": [
-		[ "env", {
-			"targets": {
-				"browsers": [
-					"last 2 versions",
-					"ie >= 9"
-				]
-			},
-			"loose": true,
-			"modules": false
-		} ]
-	]
+  "presets": [
+    ["env", {
+      "modules": false,
+      "targets": {
+        "browsers": [
+          "Chrome >= 33",
+          "FireFox >= 24",
+          "Safari >= 8",
+          "Explorer 11",
+          "Edge >= 12"
+        ]
+      }
+    }],
+    "es2015",
+    "stage-1"
+  ],
+  "plugins": ["transform-runtime"],
+  "comments": false
 }

@@ -1,3 +1,6 @@
+const Keyboard = require('game-keyboard');
+const keyMap = require('game-keyboard/key_map').US;
+
 let THREE;
 const EPSILON = 0.001;
 const STATE = {
@@ -13,7 +16,7 @@ const STATE = {
 };
 const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') !== -1;
 
-export default class CameraControls {
+export class CameraControls {
   static install(THREE_) {
     THREE = THREE_;
   }
@@ -34,6 +37,7 @@ export default class CameraControls {
     this.zoomSpeed = 1.0;
     this.maxZoomDistance = null;
     this.panSpeed = 1.0;
+    this.keyboardPanSpeed = 20;
     this.minPanSpeed = 1.0;
     this.rotationSpeed = 0.005;
     this.enableKeyboardNavigation = true;
@@ -51,6 +55,7 @@ export default class CameraControls {
 
     // state
     this.state = STATE.NONE;
+    this.keyboard = new Keyboard(keyMap);
 
     // reset
     this.target0 = this.target.clone();
@@ -72,8 +77,6 @@ export default class CameraControls {
     this.onTouchStart = this.onTouchStart.bind(this);
     this.onMouseWheel = this.onMouseWheel.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
-    this.onKeyDown = this.onKeyDown.bind(this);
-    this.onKeyUp = this.onKeyUp.bind(this);
     this.dragging = this.dragging.bind(this);
     this.startDragging = this.startDragging.bind(this);
     this.endDragging = this.endDragging.bind(this);
@@ -89,7 +92,6 @@ export default class CameraControls {
       this.domElement.addEventListener('wheel', this.onMouseWheel);
       this.domElement.addEventListener('DOMMouseScroll', this.onMouseWheel);
       this.domElement.addEventListener('contextmenu', this.onContextMenu);
-      document.addEventListener('keydown', this.onKeyDown, true);
 
       this.dispose = () => {
         this.domElement.removeEventListener('mousedown', this.onMouseDown);
@@ -100,7 +102,6 @@ export default class CameraControls {
           this.onMouseWheel
         );
         this.domElement.removeEventListener('contextmenu', this.onContextMenu);
-        document.removeEventListener('keydown', this.onKeyDown);
         document.removeEventListener('mousemove', this.dragging);
         document.removeEventListener('touchmove', this.dragging);
         document.removeEventListener('mouseup', this.endDragging);
@@ -117,10 +118,12 @@ export default class CameraControls {
     const prevState = this.state;
 
     switch (event.button) {
-      case THREE.MOUSE.LEFT:
-        this.state =
-          event.shiftKey || event.ctrlKey ? STATE.ROTATE_FP : STATE.ROTATE;
+      case THREE.MOUSE.LEFT: {
+        const ctrl = this.keyboard.isPressed('ctrl');
+        const shift = this.keyboard.isPressed('shift');
+        this.state = shift || ctrl ? STATE.ROTATE_FP : STATE.ROTATE;
         break;
+      }
 
       case THREE.MOUSE.MIDDLE:
         this.state = STATE.DOLLY;
@@ -196,71 +199,71 @@ export default class CameraControls {
     }
   }
 
-  onKeyDown(event) {
+  checkKeyboardEvents() {
     if (!this.enabled || !this.enableKeyboardNavigation) return;
+    const { keyboard } = this;
+    const shift = keyboard.isPressed('shift');
 
-    event.preventDefault();
-
-    function keyboardPan(deltaX, deltaY) {
-      const panSpeed = 20;
+    const keyboardPan = (deltaX, deltaY) => {
       const elementRect = this.domElement.getBoundingClientRect();
       const offset = this.v3.copy(this.object.position).sub(this.target);
       // half of the fov is center to top of screen
       const targetDistance =
         offset.length() * Math.tan(((this.object.fov / 2) * Math.PI) / 180);
       const panX =
-        (this.panSpeed * deltaX * panSpeed * targetDistance) /
+        (this.panSpeed * deltaX * this.keyboardPanSpeed * targetDistance) /
         elementRect.height;
       const panY =
-        (this.panSpeed * deltaY * panSpeed * targetDistance) /
+        (this.panSpeed * deltaY * this.keyboardPanSpeed * targetDistance) /
         elementRect.height;
       this.pan(panX, panY, true);
+    };
+
+    const fastMoving = shift;
+    const distanceUnit = fastMoving ? 2 : 0.5;
+
+    let change = false;
+    if (keyboard.isPressed('w')) {
+      change = true;
+      this.dollyIn(0, 0, distanceUnit);
+    }
+    if (keyboard.isPressed('s')) {
+      change = true;
+      this.dollyOut(0, 0, distanceUnit);
+    }
+    if (keyboard.isPressed('a')) {
+      change = true;
+      keyboardPan(fastMoving ? -5 : -1, 0);
+    }
+    if (keyboard.isPressed('d')) {
+      change = true;
+      keyboardPan(fastMoving ? 5 : 1, 0);
     }
 
-    const fastMoving = event.shiftKey;
-    const numDolly = fastMoving ? 25 : 5;
-
-    switch (event.keyCode) {
-      case 38: // UP
-      case 87: // W
-        this.state = STATE.FP_NAVIGATE;
-        for (let i = 0; i < numDolly; i++) {
-          this.dollyIn();
-        }
-        document.addEventListener('keyup', this.onKeyUp);
-        break;
-
-      case 40: // DOWN
-      case 83: // S
-        this.state = STATE.FP_NAVIGATE;
-        for (let i = 0; i < numDolly; i++) {
-          this.dollyOut();
-        }
-        document.addEventListener('keyup', this.onKeyUp);
-        break;
-
-      case 37: // LEFT
-      case 65: // A
-        this.state = STATE.FP_NAVIGATE;
-        document.addEventListener('keyup', this.onKeyUp);
-        keyboardPan(fastMoving ? -5 : -1, 0);
-        break;
-
-      case 39: // RIGHT
-      case 68: // D
-        this.state = STATE.FP_NAVIGATE;
-        document.addEventListener('keyup', this.onKeyUp);
-        keyboardPan(fastMoving ? 5 : 1, 0);
-        break;
-
-      default:
-        break;
+    const rotationSpeed = fastMoving ? 10 : 5;
+    if (keyboard.isPressed('left')) {
+      change = true;
+      this.rotatetFP(rotationSpeed, 0, false);
     }
-  }
+    if (keyboard.isPressed('up')) {
+      change = true;
+      this.rotatetFP(0, rotationSpeed * 0.5, false);
+    }
+    if (keyboard.isPressed('down')) {
+      change = true;
+      this.rotatetFP(0, -rotationSpeed * 0.5, false);
+    }
+    if (keyboard.isPressed('right')) {
+      change = true;
+      this.rotatetFP(-rotationSpeed, 0, false);
+    }
 
-  onKeyUp() {
-    this.state = STATE.NONE;
-    document.removeEventListener('keyup', this.onKeyUp);
+    if (change) {
+      this.state = STATE.FP_NAVIGATE;
+      this.needsUpdate = true;
+    } else if (this.state === STATE.FP_NAVIGATE) {
+      this.state = STATE.NONE;
+    }
   }
 
   onContextMenu(event) {
@@ -432,10 +435,9 @@ export default class CameraControls {
     }
 
     this.needsUpdate = true;
-    // this.update();
   }
 
-  rotatetFP(deltaX, deltaY) {
+  rotatetFP(deltaX, deltaY, forceUpdate = true) {
     const camera = this.object;
     camera.rotateY(deltaX * this.rotationSpeed);
     camera.rotateX(deltaY * this.rotationSpeed);
@@ -461,7 +463,10 @@ export default class CameraControls {
     );
     this.sphericalEnd.copy(this.spherical);
 
-    this.update();
+    this.needsUpdate = true;
+    if (forceUpdate) {
+      this.update();
+    }
   }
 
   getZoomDistance(zoomIn, enableTransition = true, distanceUnits) {
@@ -533,7 +538,6 @@ export default class CameraControls {
     }
 
     this.needsUpdate = true;
-    // this.update();
   }
 
   pan(x, y, enableTransition) {
@@ -552,7 +556,6 @@ export default class CameraControls {
     }
 
     this.needsUpdate = true;
-    // this.update();
   }
 
   moveTo(x, y, z, enableTransition) {
@@ -563,11 +566,6 @@ export default class CameraControls {
     }
 
     this.needsUpdate = true;
-  }
-
-  saveState() {
-    this.target0.copy(this.target);
-    this.position0.copy(this.object.position);
   }
 
   getState() {
@@ -584,8 +582,6 @@ export default class CameraControls {
       this.target.copy(this.targetEnd);
       this.spherical.copy(this.sphericalEnd);
     }
-
-    // this.update();
 
     this.needsUpdate = true;
   }
@@ -651,6 +647,8 @@ export default class CameraControls {
         this.sphericalEnd.copy(this.spherical);
       }
     }
+
+    this.checkKeyboardEvents();
 
     const { needsUpdate } = this;
     this.needsUpdate = false;
