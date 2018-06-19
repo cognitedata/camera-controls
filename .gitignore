@@ -8,3 +8,5 @@ npm-debug.log*
 *.map
 
 node_modules
+
+dist
