@@ -3,29 +3,29 @@
   "version": "1.2.3",
   "author": "Yomotsu",
   "license": "MIT",
-  "main": "dist/camera-controls.js",
   "repository": "yomotsu/camera-controls",
-  "jsnext:main": "dist/camera-controls.module.js",
-  "module": "dist/camera-controls.module.js",
+  "main": "dist/camera-controls.js",
+  "umd:main": "dist/camera-controls.umd.js",
+  "source": "src/camera-controls.js",
   "devDependencies": {
+    "@cognite/eslint-config": "^1.0.6",
+    "babel-eslint": "^8.2.3",
     "babel-preset-env": "1.6.0",
-    "rollup": "^0.45.2",
-    "rollup-plugin-babel": "2.7.1",
-    "rollup-watch": "^4.3.1",
-    "uglify-js": "^3.0.25"
+    "eslint": "^4.19.1",
+    "eslint-config-airbnb": "^16.1.0",
+    "eslint-config-prettier": "^2.9.0",
+    "eslint-plugin-import": "^2.9.0",
+    "eslint-plugin-jest": "^21.14.1",
+    "eslint-plugin-jsx-a11y": "^6.0.3",
+    "eslint-plugin-prettier": "^2.6.0",
+    "eslint-plugin-react": "^7.9.1",
+    "microbundle": "^0.4.4"
   },
   "scripts": {
-    "dev": "npm run watch",
-    "watch": "rollup --config --watch",
-    "build": "rollup --config",
-    "release": "rollup --config && uglifyjs dist/camera-controls.js -cm --preamble \"/*!\n * camera-controls\n * https://github.com/yomotsu/camera-controls\n * (c) 2017 @yomotsu\n * Released under the MIT License.\n */\" > dist/camera-controls.min.js"
+    "build": "microbundle --target browser --external all",
+    "dev": "microbundle watch"
   },
-  "keywords": [
-    "three",
-    "three.js",
-    "orbit",
-    "controls",
-    "OrbitControls",
-    "camera"
-  ]
+  "dependencies": {
+    "clamp": "^1.0.1"
+  }
 }
