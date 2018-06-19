@@ -32,7 +32,7 @@ export class CameraControls {
     this.maxPolarAngle = Math.PI; // radians
     this.minAzimuthAngle = -Infinity; // radians
     this.maxAzimuthAngle = Infinity; // radians
-    this.dampingFactor = 0.05;
+    this.dampingFactor = 0.5;
     this.draggingDampingFactor = 0.1;
     this.zoomSpeed = 1.0;
     this.maxZoomDistance = null;
@@ -117,6 +117,7 @@ export class CameraControls {
 
     const prevState = this.state;
 
+    this.elementRect = this.domElement.getBoundingClientRect();
     switch (event.button) {
       case THREE.MOUSE.LEFT: {
         const ctrl = this.keyboard.isPressed('ctrl');
@@ -316,13 +317,11 @@ export class CameraControls {
 
     this.dragStart.set(x, y);
 
-    const elementRect = this.domElement.getBoundingClientRect();
-
     switch (this.state) {
       case STATE.ROTATE:
       case STATE.TOUCH_ROTATE: {
-        const rotX = (2 * Math.PI * deltaX) / elementRect.width;
-        const rotY = (2 * Math.PI * deltaY) / elementRect.height;
+        const rotX = (2 * Math.PI * deltaX) / this.elementRect.width;
+        const rotY = (2 * Math.PI * deltaY) / this.elementRect.height;
         this.rotate(rotX, rotY, true);
         break;
       }
@@ -360,9 +359,9 @@ export class CameraControls {
           offset.length() * Math.tan(((this.object.fov / 2) * Math.PI) / 180);
 
         let panX =
-          (this.panSpeed * deltaX * targetDistance) / elementRect.height;
+          (this.panSpeed * deltaX * targetDistance) / this.elementRect.height;
         let panY =
-          (this.panSpeed * deltaY * targetDistance) / elementRect.height;
+          (this.panSpeed * deltaY * targetDistance) / this.elementRect.height;
         panX = THREE.Math.clamp(panX, -this.minPanSpeed, this.minPanSpeed);
         panY = THREE.Math.clamp(panY, -this.minPanSpeed, this.minPanSpeed);
         this.pan(panX, panY, true);
@@ -552,6 +551,7 @@ export class CameraControls {
     this.targetEnd.add(offset);
 
     if (!enableTransition) {
+      console.log('her...');
       this.target.copy(this.targetEnd);
     }
 
@@ -633,7 +633,10 @@ export class CameraControls {
 
     if (this.enableMinDistToTarget) {
       this.v3.subVectors(this.target, this.object.position);
-      if (this.v3.lengthSq() < this.minDistToTarget * this.minDistToTarget) {
+      if (
+        this.v3.lengthSq() + EPSILON <
+        this.minDistToTarget * this.minDistToTarget
+      ) {
         this.target.copy(
           this.object
             .getWorldDirection()
@@ -641,10 +644,8 @@ export class CameraControls {
             .add(this.object.position)
         );
         this.targetEnd.copy(this.target);
-        this.spherical.setFromVector3(
-          this.v3.subVectors(this.object.position, this.target)
-        );
-        this.sphericalEnd.copy(this.spherical);
+        this.spherical.radius = this.minDistToTarget;
+        this.sphericalEnd.radius = this.minDistToTarget;
       }
     }
 
