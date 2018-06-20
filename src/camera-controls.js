@@ -42,15 +42,14 @@ export class CameraControls {
     this.maxAzimuthAngle = Infinity; // radians
     this.dampingFactor = 0.5;
     this.draggingDampingFactor = 0.1;
-    this.zoomSpeed = 0.5;
+    this.zoomSpeed = 1.0;
     this.maxZoomDistance = 1;
     this.panSpeed = 1.0;
     this.keyboardPanSpeed = 20;
     this.minPanSpeed = 1.0;
     this.rotationSpeed = 0.005;
     this.enableKeyboardNavigation = true;
-    this.enableMinDistToTarget = true;
-    this.minDistToTarget = 3;
+    this.minDistToTarget = 0;
 
     // the location of focus, where the object orbits around
     this.target = new THREE.Vector3();
@@ -194,8 +193,8 @@ export class CameraControls {
 
     event.preventDefault();
 
-    const x = (event.clientX / this.domElement.clientWidth) * 2 - 1;
-    const y = -(event.clientY / this.domElement.clientHeight) * 2 + 1;
+    const x = (event.offsetX / this.domElement.clientWidth) * 2 - 1;
+    const y = -(event.offsetY / this.domElement.clientHeight) * 2 + 1;
 
     let delta = 0;
     if (event.wheelDelta) {
@@ -226,7 +225,7 @@ export class CameraControls {
     const shift = keyboard.isPressed('shift');
 
     const fastMoving = shift;
-    const distanceUnit = fastMoving ? 1 : 0.3;
+    const distanceUnit = fastMoving ? 1 : 0.1;
 
     const keyboardPan = (deltaX, deltaY) => {
       const distance = this.getZoomDistance(true, true, distanceUnit);
@@ -471,16 +470,17 @@ export class CameraControls {
   }
 
   getZoomDistance(zoomIn, enableTransition = true, distanceUnits) {
-    const zoomScale = 0.98 ** (this.zoomSpeed * distanceUnits);
-    const minDistance = this.minDistToTarget / zoomScale - this.minDistToTarget;
+    const zoomScale = 0.95 ** (this.zoomSpeed * distanceUnits);
+    const minDistanceToMove =
+      this.minDistToTarget / zoomScale - this.minDistToTarget;
     const { radius } = this.sphericalEnd;
     let distance;
     if (zoomIn) {
       distance = radius * zoomScale - radius;
-      distance = Math.min(-minDistance, distance);
+      distance = Math.min(-minDistanceToMove, distance);
     } else {
       distance = radius / zoomScale - radius;
-      distance = Math.max(minDistance, distance);
+      distance = Math.max(minDistanceToMove, distance);
     }
     if (this.maxZoomDistance !== null) {
       distance = THREE.Math.clamp(
@@ -489,7 +489,8 @@ export class CameraControls {
         this.maxZoomDistance
       );
     }
-    return enableTransition ? distance / this.dampingFactor : distance;
+    return distance;
+    // return enableTransition ? distance / this.dampingFactor : distance;
   }
 
   dolly(distance, enableTransition, x, y) {
@@ -508,9 +509,9 @@ export class CameraControls {
     this.mouse.set(x, y);
     // using camera's final position
     const camera = this.object.clone();
+    this.raycaster.setFromCamera(this.mouse, camera);
     camera.position.setFromSpherical(this.sphericalEnd).add(this.targetEnd);
     camera.lookAt(this.targetEnd);
-    this.raycaster.setFromCamera(this.mouse, camera);
 
     const cameraOffset = this.raycaster.ray.direction
       .clone()
@@ -641,7 +642,7 @@ export class CameraControls {
     this.object.position.setFromSpherical(this.spherical).add(this.target);
     this.object.lookAt(this.target);
 
-    if (this.enableMinDistToTarget) {
+    if (this.minDistToTarget > 0) {
       this.v3.subVectors(this.target, this.object.position);
       if (
         this.v3.lengthSq() + EPSILON <
