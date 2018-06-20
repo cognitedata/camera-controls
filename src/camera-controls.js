@@ -42,10 +42,10 @@ export class CameraControls {
     this.maxAzimuthAngle = Infinity; // radians
     this.dampingFactor = 0.5;
     this.draggingDampingFactor = 0.1;
-    this.maxZoomDistance = 1;
     this.minZoomDistance = 0.3;
+    this.maxZoomDistance = 1;
     this.panSpeed = 1.0;
-    this.minPanSpeed = 1.0;
+    this.minPanDistance = 1.0;
     this.rotationSpeed = 0.005;
     this.enableKeyboardNavigation = true;
     this.minDistToTarget = 2;
@@ -366,8 +366,16 @@ export class CameraControls {
           (this.panSpeed * deltaX * targetDistance) / this.elementRect.height;
         let panY =
           (this.panSpeed * deltaY * targetDistance) / this.elementRect.height;
-        panX = THREE.Math.clamp(panX, -this.minPanSpeed, this.minPanSpeed);
-        panY = THREE.Math.clamp(panY, -this.minPanSpeed, this.minPanSpeed);
+        panX = THREE.Math.clamp(
+          panX,
+          -this.minPanDistance,
+          this.minPanDistance
+        );
+        panY = THREE.Math.clamp(
+          panY,
+          -this.minPanDistance,
+          this.minPanDistance
+        );
         this.pan(panX, panY, true);
         break;
       }
