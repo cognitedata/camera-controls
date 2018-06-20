@@ -44,12 +44,13 @@ export class CameraControls {
     this.draggingDampingFactor = 0.1;
     this.zoomSpeed = 1.0;
     this.maxZoomDistance = 1;
+    this.minZoomDistance = 0.1;
     this.panSpeed = 1.0;
     this.keyboardPanSpeed = 20;
     this.minPanSpeed = 1.0;
     this.rotationSpeed = 0.005;
     this.enableKeyboardNavigation = true;
-    this.minDistToTarget = 0;
+    this.minDistToTarget = 2;
 
     // the location of focus, where the object orbits around
     this.target = new THREE.Vector3();
@@ -129,8 +130,8 @@ export class CameraControls {
     this.elementRect = this.domElement.getBoundingClientRect();
     switch (event.button) {
       case THREE.MOUSE.LEFT: {
-        const ctrl = this.keyboard.isPressed('ctrl');
-        this.state = ctrl ? STATE.ROTATE_FP : STATE.ROTATE;
+        const shift = this.keyboard.isPressed('shift');
+        this.state = shift ? STATE.ROTATE_FP : STATE.ROTATE;
         if (this.state === STATE.ROTATE) {
           const isWasdDown =
             this.wasdKeys.filter(key => this.keyboard.isPressed(key)).length >
@@ -163,6 +164,8 @@ export class CameraControls {
     if (!this.enabled) return;
 
     event.preventDefault();
+
+    this.elementRect = this.domElement.getBoundingClientRect();
 
     const prevState = this.state;
 
@@ -209,13 +212,13 @@ export class CameraControls {
       delta = event.deltaY / factor;
     }
 
-    const maxDelta = 1;
-    delta = THREE.Math.clamp(delta, -maxDelta, maxDelta);
+    // const maxDelta = 1;
+    // delta = THREE.Math.clamp(delta, -maxDelta, maxDelta);
 
     if (delta < 0) {
-      this.dollyIn(x, y, Math.abs(delta));
+      this.dollyIn(x, y, 1);
     } else {
-      this.dollyOut(x, y, Math.abs(delta));
+      this.dollyOut(x, y, 1);
     }
   }
 
@@ -225,7 +228,7 @@ export class CameraControls {
     const shift = keyboard.isPressed('shift');
 
     const fastMoving = shift;
-    const distanceUnit = fastMoving ? 1 : 0.1;
+    const distanceUnit = fastMoving ? 1 : 0.2;
 
     const keyboardPan = (deltaX, deltaY) => {
       const distance = this.getZoomDistance(true, true, distanceUnit);
@@ -269,10 +272,7 @@ export class CameraControls {
     }
 
     if (change) {
-      // this.state = STATE.FP_NAVIGATE;
       this.needsUpdate = true;
-    } else if (this.state === STATE.FP_NAVIGATE) {
-      // this.state = STATE.NONE;
     }
   }
 
@@ -470,25 +470,46 @@ export class CameraControls {
   }
 
   getZoomDistance(zoomIn, enableTransition = true, distanceUnits) {
-    const zoomScale = 0.95 ** (this.zoomSpeed * distanceUnits);
-    const minDistanceToMove =
-      this.minDistToTarget / zoomScale - this.minDistToTarget;
     const { radius } = this.sphericalEnd;
     let distance;
-    if (zoomIn) {
-      distance = radius * zoomScale - radius;
-      distance = Math.min(-minDistanceToMove, distance);
+    const near = this.minDistToTarget;
+    const far = near * 100;
+
+    if (radius <= this.minDistToTarget) {
+      distance = this.minZoomDistance;
+    } else if (radius >= far) {
+      distance = this.maxZoomDistance;
     } else {
-      distance = radius / zoomScale - radius;
-      distance = Math.max(minDistanceToMove, distance);
+      const a = (this.maxZoomDistance - this.minZoomDistance) / (far - near);
+      distance = this.minZoomDistance + a * (radius - near);
     }
-    if (this.maxZoomDistance !== null) {
-      distance = THREE.Math.clamp(
-        distance,
-        -this.maxZoomDistance,
-        this.maxZoomDistance
-      );
+
+    if (zoomIn) {
+      distance = -distance;
     }
+
+    distance *= distanceUnits;
+
+    // const distMinZoomSpeed =
+
+    // const zoomScale = 0.95 ** (this.zoomSpeed * distanceUnits);
+
+    // let distance;
+    // if (zoomIn) {
+    //   distance = radius * zoomScale - radius;
+    //   distance = Math.min(-this.minZoomDistance * distanceUnits, distance);
+    // } else {
+    //   distance = radius / zoomScale - radius;
+    //   distance = Math.max(this.minZoomDistance * distanceUnits, distance);
+    // }
+    // if (this.maxZoomDistance !== null) {
+    //   distance = THREE.Math.clamp(
+    //     distance,
+    //     -this.maxZoomDistance * distanceUnits,
+    //     this.maxZoomDistance * distanceUnits
+    //   );
+    // }
+    // console.log('distance: ', distance);
     return distance;
     // return enableTransition ? distance / this.dampingFactor : distance;
   }
@@ -509,14 +530,9 @@ export class CameraControls {
     this.mouse.set(x, y);
     // using camera's final position
     const camera = this.object.clone();
-    this.raycaster.setFromCamera(this.mouse, camera);
     camera.position.setFromSpherical(this.sphericalEnd).add(this.targetEnd);
     camera.lookAt(this.targetEnd);
-
-    const cameraOffset = this.raycaster.ray.direction
-      .clone()
-      .multiplyScalar(cameraMoveDistance);
-    const newCameraPosition = camera.position.clone().add(cameraOffset);
+    this.raycaster.setFromCamera(this.mouse, camera);
 
     const cameraNormal = camera.getWorldDirection();
     const targetPointPlane = this.plane;
@@ -524,18 +540,32 @@ export class CameraControls {
       cameraNormal,
       this.targetEnd
     );
+
+    const cameraOffset = this.raycaster.ray.direction
+      .clone()
+      .multiplyScalar(cameraMoveDistance);
+    camera.position.add(cameraOffset);
+
     const projectLine = this.line3;
-    const lineLength = -targetPointPlane.distanceToPoint(newCameraPosition);
+    const lineLength = -targetPointPlane.distanceToPoint(camera.position);
     projectLine.set(
-      newCameraPosition,
-      newCameraPosition
+      camera.position,
+      camera.position
         .clone()
         .add(cameraNormal.clone().multiplyScalar(lineLength * 2))
     );
     const intersect = targetPointPlane.intersectLine(projectLine);
     this.targetEnd.copy(intersect);
 
-    this.sphericalEnd.radius = newDistanceToTarget;
+    // this.sphericalEnd.radius = newDistanceToTarget;
+    this.sphericalEnd.radius = this.targetEnd.distanceTo(camera.position);
+    if (this.sphericalEnd.radius < this.minDistToTarget) {
+      const dir = camera.getWorldDirection();
+      this.targetEnd.copy(
+        camera.position.clone().add(dir.multiplyScalar(this.minDistToTarget))
+      );
+      this.sphericalEnd.radius = this.minDistToTarget;
+    }
 
     if (!enableTransition) {
       this.spherical.radius = this.sphericalEnd.radius;
@@ -607,7 +637,7 @@ export class CameraControls {
     if (delta != null) {
       dampingFactor = (this.dampingFactor * delta) / 0.016;
     }
-    dampingFactor = 1;
+    // dampingFactor = 1;
     const deltaTheta = this.sphericalEnd.theta - this.spherical.theta;
     const deltaPhi = this.sphericalEnd.phi - this.spherical.phi;
     const deltaRadius = this.sphericalEnd.radius - this.spherical.radius;
@@ -642,23 +672,23 @@ export class CameraControls {
     this.object.position.setFromSpherical(this.spherical).add(this.target);
     this.object.lookAt(this.target);
 
-    if (this.minDistToTarget > 0) {
-      this.v3.subVectors(this.target, this.object.position);
-      if (
-        this.v3.lengthSq() + EPSILON <
-        this.minDistToTarget * this.minDistToTarget
-      ) {
-        this.target.copy(
-          this.object
-            .getWorldDirection()
-            .multiplyScalar(this.minDistToTarget)
-            .add(this.object.position)
-        );
-        this.targetEnd.copy(this.target);
-        this.spherical.radius = this.minDistToTarget;
-        this.sphericalEnd.radius = this.minDistToTarget;
-      }
-    }
+    // if (this.minDistToTarget > 0) {
+    //   this.v3.subVectors(this.target, this.object.position);
+    //   if (
+    //     this.v3.lengthSq() + EPSILON <
+    //     this.minDistToTarget * this.minDistToTarget
+    //   ) {
+    //     this.target.copy(
+    //       this.object
+    //         .getWorldDirection()
+    //         .multiplyScalar(this.minDistToTarget)
+    //         .add(this.object.position)
+    //     );
+    //     this.targetEnd.copy(this.target);
+    //     this.spherical.radius = this.minDistToTarget;
+    //     this.sphericalEnd.radius = this.minDistToTarget;
+    //   }
+    // }
 
     this.checkKeyboardEvents();
 
