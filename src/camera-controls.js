@@ -42,11 +42,9 @@ export class CameraControls {
     this.maxAzimuthAngle = Infinity; // radians
     this.dampingFactor = 0.5;
     this.draggingDampingFactor = 0.1;
-    this.zoomSpeed = 1.0;
     this.maxZoomDistance = 1;
-    this.minZoomDistance = 0.1;
+    this.minZoomDistance = 0.3;
     this.panSpeed = 1.0;
-    this.keyboardPanSpeed = 20;
     this.minPanSpeed = 1.0;
     this.rotationSpeed = 0.005;
     this.enableKeyboardNavigation = true;
@@ -212,9 +210,6 @@ export class CameraControls {
       delta = event.deltaY / factor;
     }
 
-    // const maxDelta = 1;
-    // delta = THREE.Math.clamp(delta, -maxDelta, maxDelta);
-
     if (delta < 0) {
       this.dollyIn(x, y, 1);
     } else {
@@ -231,7 +226,7 @@ export class CameraControls {
     const distanceUnit = fastMoving ? 1 : 0.2;
 
     const keyboardPan = (deltaX, deltaY) => {
-      const distance = this.getZoomDistance(true, true, distanceUnit);
+      const distance = this.getZoomDistance(true, distanceUnit);
       this.pan(deltaX * distance, deltaY * distance, true);
     };
 
@@ -401,11 +396,11 @@ export class CameraControls {
 
   // x, y is coordinate to zoom to. It is in GL coordinates (-1, +1)
   dollyIn(x = 0, y = 0, distanceUnits = 1) {
-    this.dolly(this.getZoomDistance(true, true, distanceUnits), true, x, y);
+    this.dolly(this.getZoomDistance(true, distanceUnits), true, x, y);
   }
 
   dollyOut(x = 0, y = 0, distanceUnits = 1) {
-    this.dolly(this.getZoomDistance(false, true, distanceUnits), true, x, y);
+    this.dolly(this.getZoomDistance(false, distanceUnits), true, x, y);
   }
 
   // rotX in radian
@@ -469,7 +464,7 @@ export class CameraControls {
     this.needsUpdate = true;
   }
 
-  getZoomDistance(zoomIn, enableTransition = true, distanceUnits) {
+  getZoomDistance(zoomIn, distanceUnits) {
     const { radius } = this.sphericalEnd;
     let distance;
     const near = this.minDistToTarget;
@@ -489,29 +484,7 @@ export class CameraControls {
     }
 
     distance *= distanceUnits;
-
-    // const distMinZoomSpeed =
-
-    // const zoomScale = 0.95 ** (this.zoomSpeed * distanceUnits);
-
-    // let distance;
-    // if (zoomIn) {
-    //   distance = radius * zoomScale - radius;
-    //   distance = Math.min(-this.minZoomDistance * distanceUnits, distance);
-    // } else {
-    //   distance = radius / zoomScale - radius;
-    //   distance = Math.max(this.minZoomDistance * distanceUnits, distance);
-    // }
-    // if (this.maxZoomDistance !== null) {
-    //   distance = THREE.Math.clamp(
-    //     distance,
-    //     -this.maxZoomDistance * distanceUnits,
-    //     this.maxZoomDistance * distanceUnits
-    //   );
-    // }
-    // console.log('distance: ', distance);
     return distance;
-    // return enableTransition ? distance / this.dampingFactor : distance;
   }
 
   dolly(distance, enableTransition, x, y) {
@@ -557,13 +530,11 @@ export class CameraControls {
     const intersect = targetPointPlane.intersectLine(projectLine);
     this.targetEnd.copy(intersect);
 
-    // this.sphericalEnd.radius = newDistanceToTarget;
     this.sphericalEnd.radius = this.targetEnd.distanceTo(camera.position);
-    if (this.sphericalEnd.radius < this.minDistToTarget) {
-      const dir = camera.getWorldDirection();
-      this.targetEnd.copy(
-        camera.position.clone().add(dir.multiplyScalar(this.minDistToTarget))
-      );
+    const diff = this.minDistToTarget - this.sphericalEnd.radius;
+    if (diff > 0) {
+      const cameraDirection = camera.getWorldDirection();
+      this.targetEnd.add(cameraDirection.multiplyScalar(diff));
       this.sphericalEnd.radius = this.minDistToTarget;
     }
 
@@ -637,7 +608,6 @@ export class CameraControls {
     if (delta != null) {
       dampingFactor = (this.dampingFactor * delta) / 0.016;
     }
-    // dampingFactor = 1;
     const deltaTheta = this.sphericalEnd.theta - this.spherical.theta;
     const deltaPhi = this.sphericalEnd.phi - this.spherical.phi;
     const deltaRadius = this.sphericalEnd.radius - this.spherical.radius;
@@ -671,24 +641,6 @@ export class CameraControls {
     this.spherical.makeSafe();
     this.object.position.setFromSpherical(this.spherical).add(this.target);
     this.object.lookAt(this.target);
-
-    // if (this.minDistToTarget > 0) {
-    //   this.v3.subVectors(this.target, this.object.position);
-    //   if (
-    //     this.v3.lengthSq() + EPSILON <
-    //     this.minDistToTarget * this.minDistToTarget
-    //   ) {
-    //     this.target.copy(
-    //       this.object
-    //         .getWorldDirection()
-    //         .multiplyScalar(this.minDistToTarget)
-    //         .add(this.object.position)
-    //     );
-    //     this.targetEnd.copy(this.target);
-    //     this.spherical.radius = this.minDistToTarget;
-    //     this.sphericalEnd.radius = this.minDistToTarget;
-    //   }
-    // }
 
     this.checkKeyboardEvents();
 
