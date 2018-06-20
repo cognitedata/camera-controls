@@ -16,6 +16,14 @@ const STATE = {
 };
 const isFirefox = navigator.userAgent.toLowerCase().indexOf('firefox') !== -1;
 
+function matchSphericals(base, target) {
+  const diff = Math.PI * 2;
+  const halfDiff = diff * 0.5;
+  while (Math.abs(base.theta - target.theta) > halfDiff) {
+    base.theta += base.theta < target.theta ? diff : -diff;
+  }
+}
+
 export class CameraControls {
   static install(THREE_) {
     THREE = THREE_;
@@ -34,8 +42,8 @@ export class CameraControls {
     this.maxAzimuthAngle = Infinity; // radians
     this.dampingFactor = 0.5;
     this.draggingDampingFactor = 0.1;
-    this.zoomSpeed = 1.0;
-    this.maxZoomDistance = null;
+    this.zoomSpeed = 0.5;
+    this.maxZoomDistance = 1;
     this.panSpeed = 1.0;
     this.keyboardPanSpeed = 20;
     this.minPanSpeed = 1.0;
@@ -193,6 +201,9 @@ export class CameraControls {
       delta = event.deltaY / factor;
     }
 
+    const maxDelta = 2;
+    delta = THREE.Math.clamp(delta, -maxDelta, maxDelta);
+
     if (delta < 0) {
       this.dollyIn(x, y, Math.abs(delta));
     } else {
@@ -205,23 +216,13 @@ export class CameraControls {
     const { keyboard } = this;
     const shift = keyboard.isPressed('shift');
 
-    const keyboardPan = (deltaX, deltaY) => {
-      const elementRect = this.domElement.getBoundingClientRect();
-      const offset = this.v3.copy(this.object.position).sub(this.target);
-      // half of the fov is center to top of screen
-      const targetDistance =
-        offset.length() * Math.tan(((this.object.fov / 2) * Math.PI) / 180);
-      const panX =
-        (this.panSpeed * deltaX * this.keyboardPanSpeed * targetDistance) /
-        elementRect.height;
-      const panY =
-        (this.panSpeed * deltaY * this.keyboardPanSpeed * targetDistance) /
-        elementRect.height;
-      this.pan(panX, panY, true);
-    };
-
     const fastMoving = shift;
-    const distanceUnit = fastMoving ? 2 : 0.5;
+    const distanceUnit = fastMoving ? 1 : 0.3;
+
+    const keyboardPan = (deltaX, deltaY) => {
+      const distance = this.getZoomDistance(true, true, distanceUnit);
+      this.pan(deltaX * distance, deltaY * distance, true);
+    };
 
     let change = false;
     if (keyboard.isPressed('w')) {
@@ -234,36 +235,36 @@ export class CameraControls {
     }
     if (keyboard.isPressed('a')) {
       change = true;
-      keyboardPan(fastMoving ? -5 : -1, 0);
+      keyboardPan(1, 0);
     }
     if (keyboard.isPressed('d')) {
       change = true;
-      keyboardPan(fastMoving ? 5 : 1, 0);
+      keyboardPan(-1, 0);
     }
 
     const rotationSpeed = fastMoving ? 10 : 5;
     if (keyboard.isPressed('left')) {
       change = true;
-      this.rotatetFP(rotationSpeed, 0, false);
+      this.rotatetFP(rotationSpeed, 0);
     }
     if (keyboard.isPressed('up')) {
       change = true;
-      this.rotatetFP(0, rotationSpeed * 0.5, false);
+      this.rotatetFP(0, rotationSpeed * 0.5);
     }
     if (keyboard.isPressed('down')) {
       change = true;
-      this.rotatetFP(0, -rotationSpeed * 0.5, false);
+      this.rotatetFP(0, -rotationSpeed * 0.5);
     }
     if (keyboard.isPressed('right')) {
       change = true;
-      this.rotatetFP(-rotationSpeed, 0, false);
+      this.rotatetFP(-rotationSpeed, 0);
     }
 
     if (change) {
-      this.state = STATE.FP_NAVIGATE;
+      // this.state = STATE.FP_NAVIGATE;
       this.needsUpdate = true;
     } else if (this.state === STATE.FP_NAVIGATE) {
-      this.state = STATE.NONE;
+      // this.state = STATE.NONE;
     }
   }
 
@@ -436,43 +437,34 @@ export class CameraControls {
     this.needsUpdate = true;
   }
 
-  rotatetFP(deltaX, deltaY, forceUpdate = true) {
-    const camera = this.object;
+  rotatetFP(deltaX, deltaY) {
+    const camera = this.object.clone();
+    camera.position.setFromSpherical(this.sphericalEnd).add(this.targetEnd);
+    camera.lookAt(this.targetEnd);
+
     camera.rotateY(deltaX * this.rotationSpeed);
     camera.rotateX(deltaY * this.rotationSpeed);
 
-    const lookAtTarget = camera.clone();
-
-    lookAtTarget.position.copy(camera.position);
-    lookAtTarget.rotation.copy(camera.rotation);
-    lookAtTarget.translateZ(-1);
-    camera.lookAt(lookAtTarget.position);
-
     const cameraDirection = camera.getWorldDirection();
-    this.v3.subVectors(this.target, camera.position);
-    const distToTarget = this.v3.length();
-    this.target.addVectors(
+    this.v3.subVectors(this.targetEnd, camera.position);
+    const distToTarget = this.targetEnd.distanceTo(camera.position);
+    this.targetEnd.addVectors(
       camera.position,
       cameraDirection.multiplyScalar(distToTarget)
     );
-    this.targetEnd.copy(this.target);
 
-    this.spherical.setFromVector3(
-      this.v3.subVectors(camera.position, this.target)
+    this.sphericalEnd.setFromVector3(
+      this.v3.subVectors(camera.position, this.targetEnd)
     );
-    this.sphericalEnd.copy(this.spherical);
+    matchSphericals(this.sphericalEnd, this.spherical);
 
     this.needsUpdate = true;
-    if (forceUpdate) {
-      this.update();
-    }
   }
 
   getZoomDistance(zoomIn, enableTransition = true, distanceUnits) {
-    const zoomScale = 0.97 ** (this.zoomSpeed * distanceUnits);
+    const zoomScale = 0.98 ** (this.zoomSpeed * distanceUnits);
     const minDistance = this.minDistToTarget / zoomScale - this.minDistToTarget;
-    const camera = this.object;
-    const radius = camera.position.distanceTo(this.target);
+    const { radius } = this.sphericalEnd;
     let distance;
     if (zoomIn) {
       distance = radius * zoomScale - radius;
@@ -488,12 +480,11 @@ export class CameraControls {
         this.maxZoomDistance
       );
     }
-    return enableTransition ? (distance * 1) / this.dampingFactor : distance;
+    return enableTransition ? distance / this.dampingFactor : distance;
   }
 
   dolly(distance, enableTransition, x, y) {
-    const radius = this.object.position.distanceTo(this.target);
-    this.dollyTo(radius + distance, enableTransition, x, y);
+    this.dollyTo(this.sphericalEnd.radius + distance, enableTransition, x, y);
   }
 
   dollyTo(distance, enableTransition, x, y) {
@@ -502,11 +493,14 @@ export class CameraControls {
       this.minDistance,
       this.maxDistance
     );
-    const camera = this.object;
-    const radius = camera.position.distanceTo(this.target);
+    const { radius } = this.sphericalEnd;
     const cameraMoveDistance = radius - newDistanceToTarget;
 
     this.mouse.set(x, y);
+    // using camera's final position
+    const camera = this.object.clone();
+    camera.position.setFromSpherical(this.sphericalEnd).add(this.targetEnd);
+    camera.lookAt(this.targetEnd);
     this.raycaster.setFromCamera(this.mouse, camera);
 
     const cameraOffset = this.raycaster.ray.direction
@@ -516,7 +510,10 @@ export class CameraControls {
 
     const cameraNormal = camera.getWorldDirection();
     const targetPointPlane = this.plane;
-    targetPointPlane.setFromNormalAndCoplanarPoint(cameraNormal, this.target);
+    targetPointPlane.setFromNormalAndCoplanarPoint(
+      cameraNormal,
+      this.targetEnd
+    );
     const projectLine = this.line3;
     const lineLength = -targetPointPlane.distanceToPoint(newCameraPosition);
     projectLine.set(
@@ -528,7 +525,6 @@ export class CameraControls {
     const intersect = targetPointPlane.intersectLine(projectLine);
     this.targetEnd.copy(intersect);
 
-    this.sphericalEnd.copy(this.spherical);
     this.sphericalEnd.radius = newDistanceToTarget;
 
     if (!enableTransition) {
@@ -540,10 +536,15 @@ export class CameraControls {
   }
 
   pan(x, y, enableTransition) {
-    this.object.updateMatrix();
+    // use the camera position at targetEnd, sphericalEnd as the base
+    const camera = this.object.clone();
+    camera.position.setFromSpherical(this.sphericalEnd).add(this.targetEnd);
+    camera.lookAt(this.targetEnd);
 
-    this.xColumn.setFromMatrixColumn(this.object.matrix, 0);
-    this.yColumn.setFromMatrixColumn(this.object.matrix, 1);
+    camera.updateMatrix();
+
+    this.xColumn.setFromMatrixColumn(camera.matrix, 0);
+    this.yColumn.setFromMatrixColumn(camera.matrix, 1);
     this.xColumn.multiplyScalar(x);
     this.yColumn.multiplyScalar(-y);
 
@@ -551,7 +552,6 @@ export class CameraControls {
     this.targetEnd.add(offset);
 
     if (!enableTransition) {
-      console.log('her...');
       this.target.copy(this.targetEnd);
     }
 
@@ -597,6 +597,7 @@ export class CameraControls {
     if (delta != null) {
       dampingFactor = (this.dampingFactor * delta) / 0.016;
     }
+    dampingFactor = 1;
     const deltaTheta = this.sphericalEnd.theta - this.spherical.theta;
     const deltaPhi = this.sphericalEnd.phi - this.spherical.phi;
     const deltaRadius = this.sphericalEnd.radius - this.spherical.radius;
