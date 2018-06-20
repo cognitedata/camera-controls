@@ -69,6 +69,8 @@ export class CameraControls {
     this.target0 = this.target.clone();
     this.position0 = this.object.position.clone();
 
+    this.wasdKeys = ['w', 'a', 's', 'd'];
+
     // cached variables
     this.mouse = new THREE.Vector2();
     this.plane = new THREE.Plane();
@@ -129,8 +131,15 @@ export class CameraControls {
     switch (event.button) {
       case THREE.MOUSE.LEFT: {
         const ctrl = this.keyboard.isPressed('ctrl');
-        const shift = this.keyboard.isPressed('shift');
-        this.state = shift || ctrl ? STATE.ROTATE_FP : STATE.ROTATE;
+        this.state = ctrl ? STATE.ROTATE_FP : STATE.ROTATE;
+        if (this.state === STATE.ROTATE) {
+          const isWasdDown =
+            this.wasdKeys.filter(key => this.keyboard.isPressed(key)).length >
+            0;
+          if (isWasdDown) {
+            this.state = STATE.ROTATE_FP;
+          }
+        }
         break;
       }
 
@@ -201,7 +210,7 @@ export class CameraControls {
       delta = event.deltaY / factor;
     }
 
-    const maxDelta = 2;
+    const maxDelta = 1;
     delta = THREE.Math.clamp(delta, -maxDelta, maxDelta);
 
     if (delta < 0) {

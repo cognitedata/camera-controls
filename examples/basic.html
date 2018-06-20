@@ -88,12 +88,10 @@ renderer.render( scene, camera );
 
 	requestAnimationFrame( anim );
 
-	// if ( needsUpdate ) {
-
+	if ( needsUpdate ) {
 		targetMesh.position.copy(cameraControls.target);
 		renderer.render( scene, camera );
-
-	// }
+	}
 
 } )();
 </script>
